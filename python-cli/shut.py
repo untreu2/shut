@@ -83,18 +83,18 @@ def encode_file_to_base64(file_path):
     tags = [
         ["name", file_name],
         ["extension", file_extension],
-        ["encode", "base64"]
+        ["m", "shut"]
     ]
     return encoded, tags
 
 def create_deletion_request(event_ids, reason="Request for deletion"):
     tags = [["e", event_id.strip()] for event_id in event_ids]
-    tags.append(["k", "666"])
+    tags.append(["k", "1064"])
     return create_event(5, reason, tags)
 
-def create_kind666_event(file_path):
+def create_nip95_event(file_path):
     file_content, tags = encode_file_to_base64(file_path)
-    return create_event(666, file_content, tags)
+    return create_event(1064, file_content, tags)
 
 async def send_event(event):
     tasks = []
@@ -107,8 +107,10 @@ async def send_event(event):
             print(f"[Error] Relay {relay}: {response}")
         else:
             all_failed = False
-    if all_failed:
-        print("File could not be uploaded.")
+    if not all_failed:
+        print("File uploaded successfully.")
+    else:
+        print("File could not be uploaded to any relay.")
 
 async def send_event_to_relay(relay_url, event):
     try:
@@ -129,7 +131,7 @@ async def upload_file(file_path):
         print("File does not exist.")
         return
     try:
-        event = create_kind666_event(file_path)
+        event = create_nip95_event(file_path)
     except ValueError as ve:
         print(ve)
         return
@@ -161,24 +163,24 @@ async def download_file_from_relay(relay_url, event_id):
                     seen_events.add(event['id'])
                     tags = event.get("tags", [])
                     file_name, file_extension = "downloaded", "bin"
-                    encoding = None
+                    m_tag = None
                     for tag in tags:
                         if tag[0] == "name":
                             file_name = tag[1]
                         elif tag[0] == "extension":
                             file_extension = tag[1]
-                        elif tag[0] == "encode":
-                            encoding = tag[1]
+                        elif tag[0] == "m":
+                            m_tag = tag[1]
                     content = event.get("content", "")
                     try:
-                        if encoding == "base64":
+                        if m_tag == "shut":
                             decoded_content = base64.b64decode(content)
                             output_file = f"{file_name}.{file_extension}"
                             with open(output_file, "wb") as file:
                                 file.write(decoded_content)
                             print(f"[Relay: {relay_url}] File saved as '{output_file}'.")
                         else:
-                            print(f"[Relay: {relay_url}] encode tag is not base64 or not found. (Event ID: {event['id']})")
+                            print(f"[Relay: {relay_url}] Unsupported 'm' tag or not found. (Event ID: {event['id']})")
                     except Exception as e:
                         print(f"[Relay: {relay_url}] Could not decode file content. Error: {e}")
     except Exception:
@@ -206,7 +208,7 @@ async def fetch_profile_and_files_from_relay(relay_url, pubkey):
     events = []
     try:
         async with websockets.connect(relay_url) as websocket:
-            sub_request = ["REQ", "sub_id", {"kinds": [0, 666], "authors": [pubkey]}]
+            sub_request = ["REQ", "sub_id", {"kinds": [0, 1064], "authors": [pubkey]}]
             await websocket.send(json.dumps(sub_request))
             while True:
                 response = await websocket.recv()
@@ -235,7 +237,7 @@ async def fetch_profile_and_files(pubkey):
             unique_events[e["id"]] = e
     final_events = list(unique_events.values())
     profile_events = [ev for ev in final_events if ev.get("kind") == 0]
-    file_events = [ev for ev in final_events if ev.get("kind") == 666]
+    file_events = [ev for ev in final_events if ev.get("kind") == 1064]
     if profile_events:
         profile_events.sort(key=lambda x: x["created_at"], reverse=True)
         latest_profile = profile_events[0]
@@ -264,30 +266,30 @@ async def view_profile(npub):
     file_list = []
     for f_event in file_events:
         tags = f_event.get("tags", [])
-        f_name, f_ext, encoding = None, None, None
+        f_name, f_ext, m_tag = None, None, None
         for tag in tags:
             if tag[0] == "name":
                 f_name = tag[1]
             elif tag[0] == "extension":
                 f_ext = tag[1]
-            elif tag[0] == "encode":
-                encoding = tag[1]
+            elif tag[0] == "m":
+                m_tag = tag[1]
         if f_name and f_ext:
-            file_list.append((f_name, f_ext, encoding))
+            file_list.append((f_name, f_ext, m_tag))
     print("\nUser Profile")
-    print(f"name: {name}")
-    print(f"profile picture: {picture}")
-    print(f"banner: {banner}")
-    print(f"nip05: {nip05}")
-    print(f"lightning address: {lud16}")
+    print(f"Name: {name}")
+    print(f"Profile Picture: {picture}")
+    print(f"Banner: {banner}")
+    print(f"NIP-05: {nip05}")
+    print(f"Lightning Address: {lud16}")
     print("\nFiles uploaded:")
     if file_list:
         for file_item in file_list:
-            file_name, file_ext, file_enc = file_item
-            if file_enc:
-                print(f"{file_name}.{file_ext} (Encoding: {file_enc})")
+            file_name, file_ext, file_m = file_item
+            if file_m:
+                print(f"{file_name}.{file_ext} (m: {file_m})")
             else:
-                print(f"{file_name}.{file_ext} (Encoding not found)")
+                print(f"{file_name}.{file_ext} (m tag not found)")
     else:
         print("No files uploaded yet.")
 
@@ -302,7 +304,7 @@ async def general_search():
 async def general_search_on_relay(relay_url):
     try:
         async with websockets.connect(relay_url) as websocket:
-            sub_request = ["REQ", "sub_id", {"kinds": [666]}]
+            sub_request = ["REQ", "sub_id", {"kinds": [1064]}]
             await websocket.send(json.dumps(sub_request))
             while True:
                 response = await websocket.recv()
@@ -316,21 +318,20 @@ async def general_search_on_relay(relay_url):
                     seen_events.add(event['id'])
                     pubkey = event.get("pubkey", "")
                     tags = event.get("tags", [])
-                    file_name, file_extension = None, None
-                    encoding = None
+                    file_name, file_extension, m_tag = None, None, None
                     for tag in tags:
                         if tag[0] == "name":
                             file_name = tag[1]
                         elif tag[0] == "extension":
                             file_extension = tag[1]
-                        elif tag[0] == "encode":
-                            encoding = tag[1]
+                        elif tag[0] == "m":
+                            m_tag = tag[1]
                     npub = pubkey_to_npub(pubkey)
                     if file_name and file_extension:
                         print(f"npub: {npub}")
                         print(f"File: {file_name}.{file_extension}")
-                        if encoding:
-                            print(f"Encoding: {encoding}")
+                        if m_tag:
+                            print(f"m Tag: {m_tag}")
                         print(f"Event ID: {event['id']}\n")
                     else:
                         print(f"npub: {npub}")
@@ -379,22 +380,21 @@ async def query_event_id():
     if not event:
         print("Event not found on any relay.")
         return
-    if event.get("kind") != 666:
-        print("This event is not of kind 666.")
+    if event.get("kind") != 1064:
+        print("This event is not of kind 1064.")
         return
     tags = event.get("tags", [])
-    file_name, file_extension = "unknown", "bin"
-    encoding = None
+    file_name, file_extension, m_tag = "unknown", "bin", None
     for tag in tags:
         if tag[0] == "name":
             file_name = tag[1]
         elif tag[0] == "extension":
             file_extension = tag[1]
-        elif tag[0] == "encode":
-            encoding = tag[1]
-    print(f"Found event of kind 666. File: {file_name}.{file_extension}")
-    if encoding:
-        print(f"Encoding: {encoding}")
+        elif tag[0] == "m":
+            m_tag = tag[1]
+    print(f"Found event of kind 1064. File: {file_name}.{file_extension}")
+    if m_tag:
+        print(f"m Tag: {m_tag}")
     choice = input("Do you want to download this file? (y/n): ").strip().lower()
     if choice == 'y':
         await download_file(event_id)
@@ -403,7 +403,7 @@ async def main_menu():
     while True:
         print("\nWelcome to Shut")
         print("1. View Profile")
-        print("2. General Search for Kind 666 Events")
+        print("2. General Search for NIP-95 Events")
         print("3. Request to Delete Event")
         print("4. Upload File")
         print("5. Download File")
